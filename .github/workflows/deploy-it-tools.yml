@@ -1,0 +1,51 @@
+name: deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.3
+          run_install: false
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH_IT_TOOLS=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH_IT_TOOLS }}
+          key: ${{ runner.os }}-pnpm-store-it_tools-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-it_tools-
+      - name: build it-tools
+        run: |
+          pnpm install && pnpm build
+          tar -zcvf res.tar.gz -C ./dist/ .
+      - name: scp dist
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: it-tools.alomerry.com
+          username: root
+          key: ${{ secrets.VPS_SECRET_SSH_KEY }}
+          port: ${{ vars.VPS_SSH_PORT }}
+          source: "res.tar.gz"
+          target: "/tmp/"
+      - name: deploy it-tools
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: it-tools.alomerry.com
+          username: root
+          key: ${{ secrets.VPS_SECRET_SSH_KEY }}
+          port: ${{ vars.VPS_SSH_PORT }}
+          script: |
+            rm -rf /root/apps/nginx/site/it-tools.alomerry.com/*
+            tar -zxvf /tmp/res.tar.gz -C /root/apps/nginx/site/it-tools.alomerry.com/;
+            rm /tmp/res.tar.gz
